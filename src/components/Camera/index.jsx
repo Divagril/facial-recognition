@@ -4,7 +4,6 @@ import styles from './Camera.module.css';
 import { Bar } from 'react-chartjs-2';
 import { Chart, BarElement, CategoryScale, LinearScale, Tooltip, Legend } from 'chart.js';
 
-// Registrar los componentes necesarios de Chart.js
 Chart.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
 export default function CameraComponent() {
@@ -14,13 +13,11 @@ export default function CameraComponent() {
 
   const [loadingModels, setLoadingModels] = useState(true);
   const [detections, setDetections] = useState([]);
-  const [emotionCounts, setEmotionCounts] = useState({}); // Emociones actuales para el gráfico principal
-  const [capturedMoments, setCapturedMoments] = useState([]); // Almacena { url, emotions, detections }
-
+  const [emotionCounts, setEmotionCounts] = useState({});
+  const [capturedMoments, setCapturedMoments] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
-  const [selectedMoment, setSelectedMoment] = useState(null); // { url, emotions, detections } para el modal
+  const [selectedMoment, setSelectedMoment] = useState(null);
 
-  // Carga de modelos de face-api.js
   useEffect(() => {
     const loadModels = async () => {
       const MODEL_URL = "/models";
@@ -36,7 +33,6 @@ export default function CameraComponent() {
     loadModels();
   }, []);
 
-  // Iniciar la cámara
   const startVideo = () => {
     navigator.mediaDevices
       .getUserMedia({ video: {} })
@@ -50,7 +46,6 @@ export default function CameraComponent() {
       });
   };
 
-  // Bucle de detección en tiempo real
   const runFaceDetection = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current || videoRef.current.paused || videoRef.current.ended) {
       return;
@@ -61,7 +56,6 @@ export default function CameraComponent() {
     const displaySize = { width: video.videoWidth, height: video.videoHeight };
     faceapi.matchDimensions(canvas, displaySize);
 
-    // Detección más rápida con opciones optimizadas
     const detections = await faceapi
       .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }))
       .withFaceLandmarks()
@@ -70,15 +64,13 @@ export default function CameraComponent() {
 
     setDetections(detections);
 
-    // Actualizar el gráfico de emociones en vivo (si hay detecciones)
     if (detections.length > 0) {
-        const primaryDetection = detections[0]; // Tomamos el primer rostro detectado para el gráfico en vivo
+        const primaryDetection = detections[0];
         setEmotionCounts(primaryDetection.expressions);
     } else {
-        setEmotionCounts({}); // Limpiar si no hay rostros
+        setEmotionCounts({});
     }
 
-    // Limpiar y dibujar en el canvas
     const resizedDetections = faceapi.resizeResults(detections, displaySize);
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -97,18 +89,14 @@ export default function CameraComponent() {
     animationFrameId.current = requestAnimationFrame(runFaceDetection);
   }, []);
   
-  // Iniciar el bucle de detección cuando el video se esté reproduciendo
   useEffect(() => {
     const video = videoRef.current;
     if (video) {
         video.addEventListener('play', () => {
-            // Limpiar cualquier bucle anterior
             cancelAnimationFrame(animationFrameId.current);
-            // Iniciar nuevo bucle
             runFaceDetection();
         });
     }
-    // Limpieza al desmontar el componente
     return () => {
       cancelAnimationFrame(animationFrameId.current);
       if (video && video.srcObject) {
@@ -117,16 +105,14 @@ export default function CameraComponent() {
     };
   }, [runFaceDetection]);
   
-  // Limpiar los URLs de las imágenes capturadas al desmontar
   useEffect(() => {
     return () => {
       capturedMoments.forEach(moment => URL.revokeObjectURL(moment.url));
     };
   }, [capturedMoments]);
 
-  // Función para capturar una imagen del video
   const captureSnapshot = () => {
-    if (!videoRef.current || detections.length === 0) return; // No capturar si no hay rostros detectados
+    if (!videoRef.current || detections.length === 0) return;
 
     const canvas = document.createElement('canvas');
     canvas.width = videoRef.current.videoWidth;
@@ -136,30 +122,26 @@ export default function CameraComponent() {
     canvas.toBlob(blob => {
         if (blob) {
             const url = URL.createObjectURL(blob);
-            // Guardar la URL de la imagen, las emociones y las detecciones de ese momento
             const currentEmotions = detections.length > 0 ? detections[0].expressions : {};
-            setCapturedMoments(prev => [{ url, emotions: currentEmotions, detections: [...detections] }, ...prev].slice(0, 10)); // Mantener solo las últimas 10
+            setCapturedMoments(prev => [{ url, emotions: currentEmotions, detections: [...detections] }, ...prev].slice(0, 10));
         }
     });
   };
 
-  // Abre el modal con la imagen y gráfica seleccionadas
   const openModal = (moment) => {
     setSelectedMoment(moment);
     setModalOpen(true);
   };
 
-  // Cierra el modal
   const closeModal = () => {
     setModalOpen(false);
     setSelectedMoment(null);
   };
 
-  // Opciones base para los gráficos (se pueden sobrescribir)
   const baseChartOptions = {
-    indexAxis: 'y', // Hace el gráfico horizontal para mejor legibilidad
+    indexAxis: 'y',
     responsive: true,
-    maintainAspectRatio: false, // Permitir que el gráfico ajuste su tamaño dentro del modal
+    maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -178,12 +160,11 @@ export default function CameraComponent() {
       }
     },
     scales: {
-      x: { beginAtZero: true, max: 1, title: { display: true, text: 'Nivel de Confianza' } }, // Las emociones van de 0 a 1
+      x: { beginAtZero: true, max: 1, title: { display: true, text: 'Nivel de Confianza' } },
       y: { title: { display: true, text: 'Emoción' } }
     },
   };
 
-  // Datos para el gráfico en vivo
   const liveChartData = {
     labels: Object.keys(emotionCounts),
     datasets: [{
@@ -195,7 +176,6 @@ export default function CameraComponent() {
     }],
   };
 
-  // Datos para el gráfico del modal (cuando se selecciona una imagen)
   const modalChartData = selectedMoment ? {
     labels: Object.keys(selectedMoment.emotions),
     datasets: [{
@@ -207,12 +187,10 @@ export default function CameraComponent() {
     }],
   } : { labels: [], datasets: [] };
 
-
   return (
     <div className={styles.wrapper}>
       <h2 className={styles.title}>Reconocimiento Facial en Tiempo Real 🤖</h2>
       <p className={styles.description}>Análisis de edad, género y expresiones faciales a través de tu cámara.</p>
-
       <section className={styles.section}>
         <div className={styles.container}>
             <div className={styles.subtitleContainer}>
@@ -237,18 +215,15 @@ export default function CameraComponent() {
                 Capturar Imagen y Análisis 📸
             </button>
         </div>
-
         <div className={styles.container}>
             <div className={styles.subtitleContainer}>
                 <h3>Datos del Reconocimiento</h3>
             </div>
             {detections.length > 0 ? (
                 <>
-                    {/* Gráfico de emociones en vivo */}
                     <div className={styles.chartContainer}>
                         <Bar data={liveChartData} options={baseChartOptions} />
                     </div>
-                    {/* Detalles de detección en vivo */}
                     <div className={styles.details}>
                         {detections.map((det, i) => {
                             const emotions = Object.entries(det.expressions)
@@ -267,7 +242,6 @@ export default function CameraComponent() {
             ) : (
                 <p className={styles.placeholder}>Esperando detección de rostros...</p>
             )}
-             {/* Imágenes capturadas */}
              {capturedMoments.length > 0 && (
                 <div className={styles.capturesContainer}>
                     <h4>Momentos Capturados:</h4>
@@ -286,8 +260,6 @@ export default function CameraComponent() {
             )}
         </div>
       </section>
-
-      {/* Modal para mostrar imagen y gráfica */}
       {modalOpen && selectedMoment && (
         <div className={styles.modalOverlay} onClick={closeModal}>
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
