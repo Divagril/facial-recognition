@@ -1,0 +1,7 @@
+h1, h2, h3, p{
+    margin: 0;
+}
+
+body{
+    background: linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%);
+}
