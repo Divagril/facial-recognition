@@ -1,364 +1,72 @@
-/* --- Variables de Diseño --- */
-:root {
-  --primary-color: rgb(59, 130, 246);
-  --primary-color-hover: rgb(37, 99, 235);
-  --background-color: #f0f4f8;
-  --card-bg-color: #ffffff;
-  --text-color: #333;
-  --text-color-light: #666;
-  --border-radius: 12px;
-  --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  --transition-speed: 0.3s;
-}
+/* src/components/Camera/Camera.module.css */
 
-/* --- Estructura Principal --- */
-.wrapper {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  padding: 24px;
-  background-color: var(--background-color);
-  min-height: 100vh;
-  color: var(--text-color);
-}
+/* ... (estilos de .backgroundVideo, .wrapper, .title, .description sin cambios) ... */
+.backgroundVideo { position: fixed; right: 0; bottom: 0; min-width: 100%; min-height: 100%; width: auto; height: auto; z-index: -1; object-fit: cover; }
+.wrapper { font-family: system-ui, sans-serif; min-height: 100vh; background-color: transparent; color: white; text-align: center; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+.title { font-size: 2.5rem; margin-bottom: 10px; text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.7); }
+.description { font-size: 1.2rem; margin-bottom: 20px; text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.7); }
+.robotComment { font-size: 1.5rem; font-weight: 600; padding: 15px 25px; border-radius: 15px; margin-bottom: 20px; background-color: rgba(0, 0, 0, 0.7); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.2); text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5); }
+.cameraContainer { position: relative; width: 70vw; height: 52.5vw; max-width: 800px; max-height: 600px; background-color: #000; z-index: 10; display: flex; justify-content: center; align-items: center; border-radius: 12px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5); overflow: hidden; }
+.video, .canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.loading { color: white; font-size: 1.5rem; font-style: italic; text-shadow: 2px 2px 4px #000; }
 
-.title {
-  text-align: center;
-  font-size: 2.5rem;
-  margin: 0 0 12px 0;
-  font-weight: 700;
-  color: var(--primary-color);
-}
-
-.description {
-  text-align: center;
-  font-size: 1.1rem;
-  margin: 0 0 40px 0;
-  color: var(--text-color-light);
-}
-
-/* --- Contenedor Principal --- */
-.section {
+/* --- ESTILOS PARA LA VISTA DE RESULTADOS --- */
+.resultsView {
   display: flex;
-  flex-wrap: wrap;
-  gap: 32px;
-  justify-content: center;
-  align-items: flex-start;
-}
-
-.container {
-  box-sizing: border-box;
+  flex-direction: column;
+  align-items: center;
   width: 100%;
-  max-width: 600px;
-  border-radius: var(--border-radius);
-  padding: 24px;
-  background-color: var(--card-bg-color);
-  box-shadow: var(--box-shadow);
-  transition: transform var(--transition-speed) ease;
+  max-width: 1200px; /* Un poco más de espacio para la rejilla */
+  gap: 30px;
 }
 
-.container:hover {
-  transform: translateY(-5px);
-}
-
-.subtitleContainer {
-  margin-bottom: 16px;
-  border-bottom: 2px solid var(--primary-color);
-  padding-bottom: 8px;
-}
-
-.subtitleContainer h3 {
-  font-size: 1.5rem;
-  margin: 0;
-}
-
-/* --- Cámara y Canvas --- */
-.cameraContainer {
-  position: relative;
+/* --- NUEVO: REJILLA PARA LAS TARJETAS DE INFORMACIÓN --- */
+.infoGrid {
   width: 100%;
-  padding-top: 75%; /* Aspect ratio 4:3 */
-  background-color: #000;
-  border-radius: 8px;
-  overflow: hidden;
-  margin-bottom: 16px;
-}
-
-.video, .canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transform: scaleX(-1); /* Reflejar video horizontalmente */
-}
-
-/* --- Botones --- */
-.buttonGroup {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-}
-
-.button {
-  box-sizing: border-box;
-  width: 100%;
-  padding: 12px 24px;
-  cursor: pointer;
-  font-size: 1rem;
-  font-weight: 600;
-  border-radius: 8px;
-  border: none;
-  background-color: var(--primary-color);
-  color: #fff;
-  transition: background-color var(--transition-speed), transform var(--transition-speed);
-  flex: 1; /* Ocupar espacio disponible */
-}
-
-.button:hover {
-  background-color: var(--primary-color-hover);
-  transform: scale(1.02);
-}
-
-.button:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.secondaryButton {
-  background-color: #6c757d; /* Un color gris para diferenciar */
-  color: white;
-}
-
-.secondaryButton:hover {
-  background-color: #5a6268;
-}
-
-/* --- Datos y Gráficos --- */
-.loading, .placeholder {
-  text-align: center;
-  padding: 40px;
-  color: var(--text-color-light);
-  font-style: italic;
+  display: grid;
+  /* Crea columnas que se ajustan automáticamente */
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
 }
 
 .chartContainer {
-  margin-bottom: 24px;
-  height: 250px; /* Altura fija para el gráfico en vivo */
+  width: 100%;
+  height: 400px;
+  padding: 20px;
+  background-color: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  color: #333; /* Color de texto para el título */
 }
 
-.details {
-  margin-top: 1rem;
-  text-align: left;
-}
-
-.detectionCard {
-  background-color: #f9f9f9;
-  border-left: 4px solid var(--primary-color);
-  padding: 12px;
-  border-radius: 8px;
-  margin-bottom: 12px;
-}
-
-.detectionCard h4, .detectionCard h5 {
-  margin: 0 0 8px 0;
-  color: var(--primary-color-hover);
-}
-
-.detectionCard p {
-  margin: 4px 0;
-  font-size: 0.95rem;
-}
-
-/* --- Lista de Rostros Conocidos --- */
-.knownFacesList {
-  margin-top: 20px;
-  padding: 15px;
-  background-color: #f8f9fa;
-  border-radius: 8px;
-  border: 1px solid #e9ecef;
-}
-
-.knownFacesList h4 {
-  margin-top: 0;
-  margin-bottom: 10px;
-  color: var(--primary-color);
-}
-
-.knownFacesList ul {
-  list-style-type: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.knownFacesList li {
-  background-color: var(--primary-color);
+.placeholderCard { background-color: rgba(255, 255, 255, 0.95); color: #333; padding: 40px; border-radius: 12px; font-size: 1.5rem; width: 100%; max-width: 800px; }
+/* --- NUEVO: ESTILO PARA EL BOTÓN DE RESET --- */
+.resetButton {
+  margin-top: 30px;
+  padding: 15px 30px;
+  font-size: 1.2rem;
+  font-weight: 600;
   color: white;
-  padding: 5px 12px;
-  border-radius: 15px;
-  font-size: 0.9rem;
-  font-weight: 500;
-}
-
-/* --- Imágenes Capturadas --- */
-.capturesContainer {
-  margin-top: 24px;
-}
-
-.capturesContainer h4 {
-  margin-bottom: 12px;
-  color: var(--primary-color);
-}
-
-.imageList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.captureThumb {
-  width: 100px; /* Tamaño un poco más grande para las miniaturas */
-  height: 75px;
-  object-fit: cover;
-  border-radius: 8px;
-  border: 2px solid #ddd;
+  background-color: #3b82f6; /* Azul primario */
+  border: none;
+  border-radius: 10px;
   cursor: pointer;
-  transition: transform 0.2s, border-color 0.2s;
+  transition: background-color 0.2s ease-in-out, transform 0.2s ease-in-out;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-.captureThumb:hover {
-  transform: scale(1.05);
-  border-color: var(--primary-color);
+.resetButton:hover {
+  background-color: #2563eb; /* Un azul más oscuro al pasar el ratón */
+  transform: translateY(-2px);
 }
 
-/* --- Estilos del Modal --- */
-.modalOverlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-    animation: fadeIn 0.3s ease-out;
-}
-
-.modalContent {
-    background-color: var(--card-bg-color);
-    padding: 30px;
-    border-radius: var(--border-radius);
-    box-shadow: var(--box-shadow);
-    max-width: 700px; /* Ancho máximo del modal */
-    width: 90%;
-    position: relative;
-    max-height: 90vh; /* Altura máxima para asegurar desplazamiento si el contenido es mucho */
-    overflow-y: auto; /* Permitir desplazamiento interno */
-    animation: slideIn 0.3s ease-out;
-}
-
-.closeModalButton {
-    position: absolute;
-    top: 15px;
-    right: 15px;
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    color: var(--text-color-light);
-    transition: color 0.2s;
-}
-
-.closeModalButton:hover {
-    color: var(--primary-color-hover);
-}
-
-.modalContent h3 {
-    text-align: center;
-    color: var(--primary-color);
-    margin-bottom: 20px;
-    font-size: 1.8rem;
-}
-
-.modalImageContainer {
-    width: 100%;
-    padding-top: 75%; /* Aspect ratio 4:3 */
-    position: relative;
-    margin-bottom: 20px;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.modalImage {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.modalChartContainer {
-    margin-top: 20px;
-    height: 300px; /* Altura fija para el gráfico dentro del modal */
-    margin-bottom: 20px;
-}
-
-.modalDetails {
-    margin-top: 20px;
-}
-
-/* --- Animaciones --- */
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideIn {
-  from { transform: translateY(-50px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-
-/* --- Diseño Responsivo --- */
-@media (max-width: 1280px) {
-  .section {
-    flex-direction: column;
-    align-items: center;
-  }
-}
-
+/* --- MEDIA QUERIES --- */
 @media (max-width: 768px) {
-  .title {
-    font-size: 2rem;
-  }
-  .description {
-    font-size: 1rem;
-  }
-  .container {
-    padding: 16px;
-  }
-  .modalContent {
-    padding: 20px;
-    max-width: 95%;
-  }
-  .modalContent h3 {
-    font-size: 1.5rem;
-  }
-  .closeModalButton {
-    font-size: 1.2rem;
-    top: 10px;
-    right: 10px;
-  }
-  .chartContainer, .modalChartContainer {
-    height: 200px; /* Ajustar altura de gráficos para pantallas pequeñas */
-  }
-  .buttonGroup {
-    flex-direction: column;
-  }
+  .title { font-size: 1.8rem; }
+  .description { font-size: 1rem; }
+  .robotComment { font-size: 1.2rem; }
+  .cameraContainer { width: 90vw; height: 67.5vw; }
+  .resultsView { max-width: 100%; }
+  .infoGrid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .chartContainer { height: 300px; }
 }

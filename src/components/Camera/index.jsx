@@ -1,37 +1,75 @@
+// INICIO DEL ARCHIVO COMPLETO: src/components/Camera/index.jsx
+
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import * as faceapi from "face-api.js";
 import styles from './Camera.module.css';
 import { Bar } from 'react-chartjs-2';
 import { Chart, BarElement, CategoryScale, LinearScale, Tooltip, Legend } from 'chart.js';
+import InfoCard from './InfoCard';
 
 Chart.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
+
+const emotionTranslations = { neutral: 'Neutral', happy: 'Feliz', sad: 'Triste', angry: 'Enojado', fearful: 'Asustado', disgusted: 'Disgustado', surprised: 'Sorprendido' };
+
+const getAverageRgb = async (imageSrc) => {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.src = imageSrc;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const data = ctx.getImageData(0, 0, img.width, img.height).data;
+      let r = 0, g = 0, b = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        r += data[i];
+        g += data[i + 1];
+        b += data[i + 2];
+      }
+      const count = data.length / 4;
+      resolve({ r: r / count, g: g / count, b: b / count });
+    };
+  });
+};
 
 export default function CameraComponent() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const animationFrameId = useRef();
+  const analysisTimerId = useRef();
+  const countdownIntervalId = useRef();
+
+  const emotionHistory = useRef([]);
+  const ageHistory = useRef([]);
+  const genderHistory = useRef([]);
+  const recognitionHistory = useRef([]);
+  const skinToneHistory = useRef([]);
+  const faceMatcher = useRef(null);
 
   const [loadingModels, setLoadingModels] = useState(true);
-  const [detections, setDetections] = useState([]);
-  const [emotionCounts, setEmotionCounts] = useState({});
-  const [capturedMoments, setCapturedMoments] = useState([]);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [selectedMoment, setSelectedMoment] = useState(null);
+  const [loadingMessage, setLoadingMessage] = useState("Despertando a los robots de la IA... 👾");
+  const [isCameraActive, setIsCameraActive] = useState(true);
+  const [countdown, setCountdown] = useState(20);
+  const [finalAnalysisReport, setFinalAnalysisReport] = useState(null);
+  const [referenceSkinTones, setReferenceSkinTones] = useState(null);
 
-  useEffect(() => {
-    const loadModels = async () => {
-      const MODEL_URL = "/models";
-      await Promise.all([
-        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-        faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
-        faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
-      ]);
-      setLoadingModels(false);
-      startVideo();
-    };
-    loadModels();
-  }, []);
+  const createFaceMatcher = async () => {
+    try {
+      const img = await faceapi.fetchImage('/known_faces/flor.png');
+      const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+      if (!detections) {
+        console.error("No se pudo detectar un rostro en flor.png.");
+        return;
+      }
+      const labeledFaceDescriptors = [new faceapi.LabeledFaceDescriptors('Flor', [detections.descriptor])];
+      faceMatcher.current = new faceapi.FaceMatcher(labeledFaceDescriptors, 0.6);
+    } catch (error) {
+      console.error("Error al aprender el rostro:", error);
+    }
+  };
 
   const startVideo = () => {
     navigator.mediaDevices
@@ -41,259 +79,242 @@ export default function CameraComponent() {
           videoRef.current.srcObject = stream;
         }
       })
-      .catch((err) => {
-        console.error("Error al acceder a la cámara:", err);
-      });
+      .catch((err) => console.error("Error al acceder a la cámara:", err));
   };
 
   const runFaceDetection = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current || videoRef.current.paused || videoRef.current.ended) {
-      return;
-    }
+    if (!videoRef.current || videoRef.current.paused || videoRef.current.ended) return;
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const displaySize = { width: video.videoWidth, height: video.videoHeight };
     faceapi.matchDimensions(canvas, displaySize);
 
-    const detections = await faceapi
-      .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }))
-      .withFaceLandmarks()
-      .withAgeAndGender()
-      .withFaceExpressions();
-
-    setDetections(detections);
-
-    if (detections.length > 0) {
-        const primaryDetection = detections[0];
-        setEmotionCounts(primaryDetection.expressions);
-    } else {
-        setEmotionCounts({});
-    }
-
+    const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withAgeAndGender().withFaceExpressions().withFaceDescriptors();
     const resizedDetections = faceapi.resizeResults(detections, displaySize);
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    faceapi.draw.drawDetections(canvas, resizedDetections);
-    faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
-    faceapi.draw.drawFaceExpressions(canvas, resizedDetections);
+    if (detections.length > 0) {
+      const mainDetection = detections[0];
+      emotionHistory.current.push(mainDetection.expressions);
+      ageHistory.current.push(mainDetection.age);
+      genderHistory.current.push(mainDetection.gender);
 
-    resizedDetections.forEach((detection) => {
-        const { age, gender, genderProbability } = detection;
-        const genderText = `${gender} (${(genderProbability * 100).toFixed(1)}%)`;
-        const ageText = `Edad: ${age.toFixed(0)}`;
-        new faceapi.draw.DrawTextField([ageText, genderText], detection.detection.box.topLeft).draw(canvas);
-    });
-
-    animationFrameId.current = requestAnimationFrame(runFaceDetection);
-  }, []);
-  
-  useEffect(() => {
-    const video = videoRef.current;
-    if (video) {
-        video.addEventListener('play', () => {
-            cancelAnimationFrame(animationFrameId.current);
-            runFaceDetection();
+      if (faceMatcher.current) {
+        const bestMatch = faceMatcher.current.findBestMatch(mainDetection.descriptor);
+        recognitionHistory.current.push(bestMatch.label);
+      }
+      if (referenceSkinTones) {
+        const { x, y, width, height } = mainDetection.detection.box;
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = width;
+        tempCanvas.height = height;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(video, x, y, width, height, 0, 0, width, height);
+        const data = tempCtx.getImageData(0, 0, width, height).data;
+        let r = 0, g = 0, b = 0;
+        for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i+1]; b += data[i+2]; }
+        const count = data.length / 4;
+        const userColor = { r: r/count, g: g/count, b: b/count };
+        let closestTone = 'Desconocido', minDistance = Infinity;
+        referenceSkinTones.forEach(tone => {
+          const distance = Math.sqrt(Math.pow(userColor.r - tone.color.r, 2) + Math.pow(userColor.g - tone.color.g, 2) + Math.pow(userColor.b - tone.color.b, 2));
+          if (distance < minDistance) { minDistance = distance; closestTone = tone.name; }
         });
+        skinToneHistory.current.push(closestTone);
+      }
+      faceapi.draw.drawDetections(canvas, resizedDetections);
+      faceapi.draw.drawFaceExpressions(canvas, resizedDetections);
+      faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
     }
-    return () => {
-      cancelAnimationFrame(animationFrameId.current);
-      if (video && video.srcObject) {
-        video.srcObject.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [runFaceDetection]);
+    animationFrameId.current = requestAnimationFrame(runFaceDetection);
+  }, [referenceSkinTones]);
   
-  useEffect(() => {
-    return () => {
-      capturedMoments.forEach(moment => URL.revokeObjectURL(moment.url));
+  const processFinalAnalysis = useCallback(async () => {
+    if (emotionHistory.current.length === 0) {
+      setFinalAnalysisReport({ empty: true });
+      return;
+    }
+
+    const emotionSums = {};
+    emotionHistory.current.forEach(emotions => { for (const [emotion, value] of Object.entries(emotions)) { if (!emotionSums[emotion]) emotionSums[emotion] = 0; emotionSums[emotion] += value; } });
+    const averagedEmotions = {};
+    for (const emotion in emotionSums) { averagedEmotions[emotion] = emotionSums[emotion] / emotionHistory.current.length; }
+    const translatedAveragedEmotions = {};
+    for (const englishEmotion in averagedEmotions) { const spanishEmotion = emotionTranslations[englishEmotion] || englishEmotion; translatedAveragedEmotions[spanishEmotion] = averagedEmotions[englishEmotion]; }
+    const mainEmotion = Object.keys(translatedAveragedEmotions).reduce((a, b) => translatedAveragedEmotions[a] > translatedAveragedEmotions[b] ? a : b);
+
+    const averageAge = ageHistory.current.reduce((a, b) => a + b, 0) / ageHistory.current.length;
+    const genderCount = genderHistory.current.reduce((acc, gender) => { acc[gender] = (acc[gender] || 0) + 1; return acc; }, {});
+    const detectedGenderByAI = Object.keys(genderCount).reduce((a, b) => genderCount[a] > genderCount[b] ? a : b);
+
+    const recognitionCount = recognitionHistory.current.reduce((acc, name) => { acc[name] = (acc[name] || 0) + 1; return acc; }, {});
+    const detectedIdentity = Object.keys(recognitionCount).length > 0 ? Object.keys(recognitionCount).reduce((a, b) => recognitionCount[a] > recognitionCount[b] ? a : b) : 'unknown';
+    
+    const skinToneCount = skinToneHistory.current.reduce((acc, tone) => { acc[tone] = (acc[tone] || 0) + 1; return acc; }, {});
+    const detectedSkinTone = Object.keys(skinToneCount).length > 0 ? Object.keys(skinToneCount).reduce((a, b) => skinToneCount[a] > skinToneCount[b] ? a : b) : 'No detectado';
+
+    let finalGender;
+    if (detectedIdentity === 'Flor') {
+      finalGender = 'Femenino';
+    } else {
+      finalGender = detectedGenderByAI === 'male' ? 'Masculino' : 'Femenino';
+    }
+
+    const reportData = {
+      age: Math.round(averageAge),
+      gender: finalGender,
+      mainEmotion: mainEmotion,
+      allEmotions: translatedAveragedEmotions,
+      identity: detectedIdentity,
+      skinTone: detectedSkinTone,
     };
-  }, [capturedMoments]);
 
-  const captureSnapshot = () => {
-    if (!videoRef.current || detections.length === 0) return;
+    try {
+      const response = await fetch('http://localhost:4000/api/historiales', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(reportData),
+      });
+      if (!response.ok) { throw new Error('La respuesta del servidor no fue OK'); }
+      const responseData = await response.json();
+      console.log('Respuesta del servidor:', responseData.message);
+    } catch (error) {
+      console.error('Error al enviar el historial al backend:', error);
+    }
+    
+    setFinalAnalysisReport(reportData);
+  }, []);
 
-    const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    canvas.getContext('2d').drawImage(videoRef.current, 0, 0);
-
-    canvas.toBlob(blob => {
-        if (blob) {
-            const url = URL.createObjectURL(blob);
-            const currentEmotions = detections.length > 0 ? detections[0].expressions : {};
-            setCapturedMoments(prev => [{ url, emotions: currentEmotions, detections: [...detections] }, ...prev].slice(0, 10));
-        }
-    });
+  const handleReset = () => {
+    setFinalAnalysisReport(null);
+    emotionHistory.current = [];
+    ageHistory.current = [];
+    genderHistory.current = [];
+    recognitionHistory.current = [];
+    skinToneHistory.current = [];
+    setCountdown(20);
+    setIsCameraActive(true);
   };
 
-  const openModal = (moment) => {
-    setSelectedMoment(moment);
-    setModalOpen(true);
-  };
-
-  const closeModal = () => {
-    setModalOpen(false);
-    setSelectedMoment(null);
-  };
-
-  const baseChartOptions = {
-    indexAxis: 'y',
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        callbacks: {
-          label: function(context) {
-            let label = context.dataset.label || '';
-            if (label) {
-              label += ': ';
-            }
-            if (context.parsed.x !== null) {
-              label += (context.parsed.x * 100).toFixed(1) + '%';
-            }
-            return label;
-          }
-        }
+  useEffect(() => {
+    const loadInitialModels = async () => {
+      const MODEL_URL = "/models";
+      try {
+        setLoadingMessage("Cargando modelos de IA...");
+        await Promise.all([
+          faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+          faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
+          faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+        ]);
+        
+        setLoadingMessage("Aprendiendo rostro de referencia...");
+        await createFaceMatcher();
+        
+        setLoadingMessage("Calibrando tonos de piel de referencia...");
+        const tones = await Promise.all([
+          getAverageRgb('/known_faces/marina.png').then(color => ({ name: 'Tes Blanca', color })),
+          getAverageRgb('/known_faces/negro.png').then(color => ({ name: 'Tes Negra', color })),
+          getAverageRgb('/known_faces/trigeña.png').then(color => ({ name: 'Trigueña', color })),
+        ]);
+        setReferenceSkinTones(tones);
+        
+        setLoadingModels(false);
+      } catch (error) {
+        console.error("Error crítico al inicializar la IA:", error);
       }
-    },
-    scales: {
-      x: { beginAtZero: true, max: 1, title: { display: true, text: 'Nivel de Confianza' } },
-      y: { title: { display: true, text: 'Emoción' } }
-    },
-  };
+    };
+    loadInitialModels();
+  }, []);
 
-  const liveChartData = {
-    labels: Object.keys(emotionCounts),
-    datasets: [{
-      label: 'Nivel de Emoción',
-      data: Object.values(emotionCounts).map(v => Number(v.toFixed(2))),
-      backgroundColor: 'rgba(59, 130, 246, 0.8)',
-      borderColor: 'rgba(59, 130, 246, 1)',
-      borderWidth: 1,
-    }],
-  };
+  useEffect(() => {
+    if (isCameraActive && !loadingModels) {
+      startVideo();
+      const video = videoRef.current;
+      if (video) {
+        const handlePlay = () => {
+          runFaceDetection();
+          countdownIntervalId.current = setInterval(() => {
+            setCountdown(prev => (prev <= 1 ? 0 : prev - 1));
+          }, 1000);
+          analysisTimerId.current = setTimeout(() => {
+            clearInterval(countdownIntervalId.current);
+            cancelAnimationFrame(animationFrameId.current);
+            if (videoRef.current && videoRef.current.srcObject) {
+              videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+            }
+            processFinalAnalysis();
+            setIsCameraActive(false);
+          }, 20000);
+        };
+        video.addEventListener('play', handlePlay);
+        return () => {
+          video.removeEventListener('play', handlePlay);
+          clearInterval(countdownIntervalId.current);
+          clearTimeout(analysisTimerId.current);
+          cancelAnimationFrame(animationFrameId.current);
+        };
+      }
+    }
+  }, [isCameraActive, loadingModels, runFaceDetection, processFinalAnalysis]);
 
-  const modalChartData = selectedMoment ? {
-    labels: Object.keys(selectedMoment.emotions),
-    datasets: [{
-      label: 'Nivel de Emoción',
-      data: Object.values(selectedMoment.emotions).map(v => Number(v.toFixed(2))),
-      backgroundColor: 'rgba(59, 130, 246, 0.8)',
-      borderColor: 'rgba(59, 130, 246, 1)',
-      borderWidth: 1,
-    }],
-  } : { labels: [], datasets: [] };
+  const chartOptions = { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, max: 1, title: { display: true, text: 'Nivel Promedio' } }, y: { title: { display: true, text: 'Emoción' } } }, };
+  const chartData = finalAnalysisReport && finalAnalysisReport.allEmotions ? { labels: Object.keys(finalAnalysisReport.allEmotions), datasets: [{ label: 'Nivel de Emoción', data: Object.values(finalAnalysisReport.allEmotions), backgroundColor: 'rgba(59, 130, 246, 0.8)' }], } : { labels: [], datasets: [] };
 
   return (
     <div className={styles.wrapper}>
-      <h2 className={styles.title}>Reconocimiento Facial en Tiempo Real 🤖</h2>
-      <p className={styles.description}>Análisis de edad, género y expresiones faciales a través de tu cámara.</p>
-      <section className={styles.section}>
-        <div className={styles.container}>
-            <div className={styles.subtitleContainer}>
-                <h3>Cámara en Vivo</h3>
-            </div>
-            {loadingModels && <p className={styles.loading}>Cargando modelos de IA...</p>}
-            <div className={styles.cameraContainer}>
-                <video
-                    ref={videoRef}
-                    autoPlay
-                    muted
-                    playsInline
-                    className={styles.video}
-                />
+      <video autoPlay loop muted className={styles.backgroundVideo}>
+        <source src="/fondo.mp4" type="video/mp4" />
+      </video>
+      {isCameraActive && !loadingModels && ( <> <h2 className={styles.title}>Recolectando datos...</h2> <p className={styles.description}>Sonríe (o no)... ¡La IA te está observando! 🧐</p> </> )}
+      {isCameraActive ? (
+        <>
+          {loadingModels ? (
+            <p className={styles.loading}>{loadingMessage}</p>
+          ) : (
+            <>
+              <p className={styles.robotComment}> ¡Calibrando sensores! Analizando tu vibra... {countdown}s restantes 👾 </p>
+              <div className={styles.cameraContainer}>
+                <video ref={videoRef} autoPlay muted playsInline className={styles.video} />
                 <canvas ref={canvasRef} className={styles.canvas} />
+              </div>
+            </>
+          )}
+        </>
+      ) : (
+        <div className={styles.resultsView}>
+          <h2 className={styles.title}>¡Veredicto Final del Emociómetro! 📜</h2>
+          {finalAnalysisReport && !finalAnalysisReport.empty ? (
+            <>
+              <div className={styles.infoGrid}>
+                <InfoCard icon="🆔" label="Identidad" value={finalAnalysisReport.identity === 'Flor' ? `Identificada: ${finalAnalysisReport.identity}` : 'No Identificada'} highlight={true} />
+                <InfoCard icon={finalAnalysisReport.gender === 'Masculino' ? '👨' : '👩'} label="Sexo" value={finalAnalysisReport.gender} />
+                <InfoCard icon="🎂" label="Edad Estimada" value={`${finalAnalysisReport.age} años`} />
+                <InfoCard icon="🎨" label="Tono de Piel" value={finalAnalysisReport.skinTone} />
+                <InfoCard icon="😊" label="Emoción Principal" value={finalAnalysisReport.mainEmotion} />
+              </div>
+              <div className={styles.chartContainer}>
+                <h3>Análisis Completo de Emociones</h3>
+                <Bar data={chartData} options={chartOptions} />
+              </div>
+            </>
+          ) : (
+            <div className={styles.placeholderCard}>
+              <p>¡Vaya! Parece que te escondiste muy bien. No vimos ninguna cara para analizar. 🙈</p>
             </div>
-            <button
-                onClick={captureSnapshot}
-                className={styles.button}
-                disabled={loadingModels || detections.length === 0}
-            >
-                Capturar Imagen y Análisis 📸
-            </button>
-        </div>
-        <div className={styles.container}>
-            <div className={styles.subtitleContainer}>
-                <h3>Datos del Reconocimiento</h3>
-            </div>
-            {detections.length > 0 ? (
-                <>
-                    <div className={styles.chartContainer}>
-                        <Bar data={liveChartData} options={baseChartOptions} />
-                    </div>
-                    <div className={styles.details}>
-                        {detections.map((det, i) => {
-                            const emotions = Object.entries(det.expressions)
-                                .sort((a, b) => b[1] - a[1]);
-                            return (
-                                <div key={i} className={styles.detectionCard}>
-                                    <h4>Persona {i + 1}</h4>
-                                    <p><b>Edad estimada:</b> {det.age.toFixed(0)} años</p>
-                                    <p><b>Género:</b> {det.gender} ({(det.genderProbability * 100).toFixed(1)}%)</p>
-                                    <p><b>Emoción principal:</b> {emotions[0][0]}</p>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </>
-            ) : (
-                <p className={styles.placeholder}>Esperando detección de rostros...</p>
-            )}
-             {capturedMoments.length > 0 && (
-                <div className={styles.capturesContainer}>
-                    <h4>Momentos Capturados:</h4>
-                    <div className={styles.imageList}>
-                    {capturedMoments.map((moment, idx) => (
-                        <img
-                            key={idx}
-                            src={moment.url}
-                            alt={`captura-${idx}`}
-                            className={styles.captureThumb}
-                            onClick={() => openModal(moment)}
-                        />
-                    ))}
-                    </div>
-                </div>
-            )}
-        </div>
-      </section>
-      {modalOpen && selectedMoment && (
-        <div className={styles.modalOverlay} onClick={closeModal}>
-          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-            <button className={styles.closeModalButton} onClick={closeModal}>✖</button>
-            <h3>Detalles del Momento Capturado</h3>
-            <div className={styles.modalImageContainer}>
-                <img src={selectedMoment.url} alt="Momento Capturado" className={styles.modalImage} />
-            </div>
-            {Object.keys(selectedMoment.emotions).length > 0 && (
-                <div className={styles.modalChartContainer}>
-                    <h4>Análisis de Emociones</h4>
-                    <Bar data={modalChartData} options={baseChartOptions} />
-                </div>
-            )}
-             {selectedMoment.detections.length > 0 && (
-                <div className={styles.modalDetails}>
-                    <h4>Análisis Detallado:</h4>
-                    {selectedMoment.detections.map((det, i) => {
-                        const emotions = Object.entries(det.expressions)
-                            .sort((a, b) => b[1] - a[1]);
-                        return (
-                            <div key={i} className={styles.detectionCard}>
-                                <h5>Rostro {i + 1}</h5>
-                                <p><b>Edad estimada:</b> {det.age.toFixed(0)} años</p>
-                                <p><b>Género:</b> {det.gender} ({(det.genderProbability * 100).toFixed(1)}%)</p>
-                                <p><b>Emoción principal:</b> {emotions[0][0]}</p>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-          </div>
+          )}
+          <button onClick={handleReset} className={styles.resetButton}>
+            Volver a Analizar 
+          </button>
         </div>
       )}
     </div>
   );
 }
+
+// FIN DEL ARCHIVO COMPLETO
