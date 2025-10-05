@@ -1,4 +1,4 @@
-// INICIO DEL ARCHIVO COMPLETO: src/components/Camera/index.jsx
+// INICIO DEL ARCHIVO COMPLETO Y FINAL: src/components/Camera/index.jsx
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import * as faceapi from "face-api.js";
@@ -12,7 +12,7 @@ Chart.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 const emotionTranslations = { neutral: 'Neutral', happy: 'Feliz', sad: 'Triste', angry: 'Enojado', fearful: 'Asustado', disgusted: 'Disgustado', surprised: 'Sorprendido' };
 
 const getAverageRgb = async (imageSrc) => {
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'Anonymous';
     img.src = imageSrc;
@@ -32,6 +32,7 @@ const getAverageRgb = async (imageSrc) => {
       const count = data.length / 4;
       resolve({ r: r / count, g: g / count, b: b / count });
     };
+    img.onerror = (error) => reject(error);
   });
 };
 
@@ -58,39 +59,85 @@ export default function CameraComponent() {
 
   const createFaceMatcher = async () => {
     try {
-      const img = await faceapi.fetchImage('/known_faces/flor.png');
-      const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
-      if (!detections) {
-        console.error("No se pudo detectar un rostro en flor.png.");
+      const knownFaces = [
+        { label: 'Flor', image: 'flor.png' },
+        { label: 'Hombre de Prueba', image: 'hombre.png' },
+        { label: 'Marina', image: 'marina.png' },
+        { label: 'Mujer de Prueba', image: 'mujer.png' }
+      ];
+
+      setLoadingMessage("Aprendiendo rostros de referencia...");
+
+      const labeledFaceDescriptors = await Promise.all(
+        knownFaces.map(async (face) => {
+          try {
+            const img = await faceapi.fetchImage(`/known_faces/${face.image}`);
+            const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+            if (!detections) {
+              console.warn(`No se pudo detectar un rostro en la imagen de referencia: ${face.image}`);
+              return null;
+            }
+            return new faceapi.LabeledFaceDescriptors(face.label, [detections.descriptor]);
+          } catch (e) {
+            console.error(`Error al cargar o procesar la imagen de referencia ${face.image}:`, e);
+            return null;
+          }
+        })
+      );
+
+      const validDescriptors = labeledFaceDescriptors.filter(descriptor => descriptor !== null);
+      if (validDescriptors.length === 0) {
+        console.error("No se pudo cargar ningún descriptor de rostro de referencia válido.");
         return;
       }
-      const labeledFaceDescriptors = [new faceapi.LabeledFaceDescriptors('Flor', [detections.descriptor])];
-      faceMatcher.current = new faceapi.FaceMatcher(labeledFaceDescriptors, 0.6);
+
+      faceMatcher.current = new faceapi.FaceMatcher(validDescriptors, 0.6);
+      console.log("✅ FaceMatcher creado con las siguientes identidades:", validDescriptors.map(d => d.label));
+
     } catch (error) {
-      console.error("Error al aprender el rostro:", error);
+      console.error("🚨 Error crítico al crear el FaceMatcher:", error);
     }
   };
 
   const startVideo = () => {
+    console.log("📹 Intentando acceder a la cámara...");
     navigator.mediaDevices
       .getUserMedia({ video: {} })
       .then((stream) => {
         if (videoRef.current) {
+          console.log("✅ Cámara accedida con éxito. Asignando stream al elemento de video.");
           videoRef.current.srcObject = stream;
         }
       })
-      .catch((err) => console.error("Error al acceder a la cámara:", err));
+      .catch((err) => console.error("🚨 ERROR AL ACCEDER A LA CÁMARA:", err));
   };
 
   const runFaceDetection = useCallback(async () => {
-    if (!videoRef.current || videoRef.current.paused || videoRef.current.ended) return;
+    if (!videoRef.current || videoRef.current.paused || videoRef.current.ended) {
+      animationFrameId.current = requestAnimationFrame(runFaceDetection);
+      return;
+    }
 
     const video = videoRef.current;
+    if (video.videoWidth === 0) {
+      animationFrameId.current = requestAnimationFrame(runFaceDetection);
+      return;
+    }
+
     const canvas = canvasRef.current;
     const displaySize = { width: video.videoWidth, height: video.videoHeight };
     faceapi.matchDimensions(canvas, displaySize);
 
-    const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withAgeAndGender().withFaceExpressions().withFaceDescriptors();
+    const detections = await faceapi.detectAllFaces(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+      .withFaceLandmarks()
+      .withAgeAndGender()
+      .withFaceExpressions()
+      .withFaceDescriptors();
+
+    if (detections.length > 0) {
+      console.log(`😀 Rostros detectados en este frame: ${detections.length}`);
+    }
+
     const resizedDetections = faceapi.resizeResults(detections, displaySize);
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -105,11 +152,10 @@ export default function CameraComponent() {
         const bestMatch = faceMatcher.current.findBestMatch(mainDetection.descriptor);
         recognitionHistory.current.push(bestMatch.label);
       }
+
       if (referenceSkinTones) {
         const { x, y, width, height } = mainDetection.detection.box;
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = width;
-        tempCanvas.height = height;
+        const tempCanvas = document.createElement('canvas'); tempCanvas.width = width; tempCanvas.height = height;
         const tempCtx = tempCanvas.getContext('2d');
         tempCtx.drawImage(video, x, y, width, height, 0, 0, width, height);
         const data = tempCtx.getImageData(0, 0, width, height).data;
@@ -132,7 +178,9 @@ export default function CameraComponent() {
   }, [referenceSkinTones]);
   
   const processFinalAnalysis = useCallback(async () => {
+    console.log("Procesando análisis final...");
     if (emotionHistory.current.length === 0) {
+      console.log("No se detectaron rostros durante la sesión. Mostrando mensaje vacío.");
       setFinalAnalysisReport({ empty: true });
       return;
     }
@@ -156,7 +204,7 @@ export default function CameraComponent() {
     const detectedSkinTone = Object.keys(skinToneCount).length > 0 ? Object.keys(skinToneCount).reduce((a, b) => skinToneCount[a] > skinToneCount[b] ? a : b) : 'No detectado';
 
     let finalGender;
-    if (detectedIdentity === 'Flor') {
+    if (['Flor', 'Marina', 'Mujer de Prueba'].includes(detectedIdentity)) {
       finalGender = 'Femenino';
     } else {
       finalGender = detectedGenderByAI === 'male' ? 'Masculino' : 'Femenino';
@@ -171,12 +219,12 @@ export default function CameraComponent() {
       skinTone: detectedSkinTone,
     };
 
+    console.log("📊 Reporte final generado:", reportData);
+
     try {
       const response = await fetch('http://localhost:4000/api/historiales', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(reportData),
       });
       if (!response.ok) { throw new Error('La respuesta del servidor no fue OK'); }
@@ -204,6 +252,7 @@ export default function CameraComponent() {
     const loadInitialModels = async () => {
       const MODEL_URL = "/models";
       try {
+        console.log("Iniciando carga de modelos de IA desde:", MODEL_URL);
         setLoadingMessage("Cargando modelos de IA...");
         await Promise.all([
           faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
@@ -212,10 +261,11 @@ export default function CameraComponent() {
           faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
           faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
         ]);
+        console.log("✅ Todos los modelos de IA cargados con éxito.");
         
-        setLoadingMessage("Aprendiendo rostro de referencia...");
         await createFaceMatcher();
         
+        console.log("Iniciando calibración de tonos de piel...");
         setLoadingMessage("Calibrando tonos de piel de referencia...");
         const tones = await Promise.all([
           getAverageRgb('/known_faces/marina.png').then(color => ({ name: 'Tes Blanca', color })),
@@ -223,10 +273,12 @@ export default function CameraComponent() {
           getAverageRgb('/known_faces/trigeña.png').then(color => ({ name: 'Trigueña', color })),
         ]);
         setReferenceSkinTones(tones);
+        console.log("✅ Tonos de piel calibrados.");
         
         setLoadingModels(false);
       } catch (error) {
-        console.error("Error crítico al inicializar la IA:", error);
+        console.error("🚨 ERROR CRÍTICO AL INICIALIZAR LA IA:", error);
+        setLoadingMessage("Error al cargar los modelos de IA. Revisa la consola.");
       }
     };
     loadInitialModels();
@@ -238,11 +290,11 @@ export default function CameraComponent() {
       const video = videoRef.current;
       if (video) {
         const handlePlay = () => {
+          console.log("▶️ El video ha comenzado a reproducirse. Iniciando bucle de detección.");
           runFaceDetection();
-          countdownIntervalId.current = setInterval(() => {
-            setCountdown(prev => (prev <= 1 ? 0 : prev - 1));
-          }, 1000);
+          countdownIntervalId.current = setInterval(() => { setCountdown(prev => (prev <= 1 ? 0 : prev - 1)); }, 1000);
           analysisTimerId.current = setTimeout(() => {
+            console.log("⌛ Tiempo de análisis finalizado. Deteniendo cámara y procesando resultados.");
             clearInterval(countdownIntervalId.current);
             cancelAnimationFrame(animationFrameId.current);
             if (videoRef.current && videoRef.current.srcObject) {
@@ -292,7 +344,12 @@ export default function CameraComponent() {
           {finalAnalysisReport && !finalAnalysisReport.empty ? (
             <>
               <div className={styles.infoGrid}>
-                <InfoCard icon="🆔" label="Identidad" value={finalAnalysisReport.identity === 'Flor' ? `Identificada: ${finalAnalysisReport.identity}` : 'No Identificada'} highlight={true} />
+                <InfoCard 
+                  icon="🆔" 
+                  label="Identidad" 
+                  value={finalAnalysisReport.identity !== 'unknown' ? `Identificado: ${finalAnalysisReport.identity}` : 'No Identificada'} 
+                  highlight={finalAnalysisReport.identity !== 'unknown'} 
+                />
                 <InfoCard icon={finalAnalysisReport.gender === 'Masculino' ? '👨' : '👩'} label="Sexo" value={finalAnalysisReport.gender} />
                 <InfoCard icon="🎂" label="Edad Estimada" value={`${finalAnalysisReport.age} años`} />
                 <InfoCard icon="🎨" label="Tono de Piel" value={finalAnalysisReport.skinTone} />
