@@ -1,57 +1,101 @@
-// Archivo: server.js
-
 const express = require('express');
 const cors = require('cors');
+const sql = require('mssql');
 
-// Inicializa la aplicación Express
 const app = express();
-const PORT = 4000; // El puerto donde se ejecutará nuestro backend
+const PORT = process.env.PORT || 4000;
 
-// --- MIDDLEWARE ---
-// Habilita CORS para permitir peticiones desde tu app de React
 app.use(cors());
-// Permite que Express entienda el formato JSON que enviaremos desde React
 app.use(express.json());
 
+const sqlConfig = {
+    server: process.env.DB_HOST || '4.153.168.78',
+    port: 1433,
+    user: process.env.DB_USER || 'sa',
+    password: process.env.DB_PASSWORD || 'fnZzsc4PQEUcR@4',
+    database: 'AnalisisFacialDB',
+    options: {
+        encrypt: true,
+        trustServerCertificate: true
+    },
+    // Es recomendable agregar un timeout para evitar que las peticiones se queden colgadas
+    connectionTimeout: 30000 
+};
 
-// --- "BASE DE DATOS" EN MEMORIA ---
-// Por ahora, guardaremos los historiales en un simple array.
-// Cada vez que reinicies el servidor, esto se borrará.
+// --- "BASE DE DATOS" EN MEMORIA (FALLBACK) ---
 const historiales = [];
 
+// --- RUTA PARA RECIBIR Y GUARDAR UN NUEVO HISTORIAL DE ANÁLISIS ---
+app.post('/api/historiales', async (req, res) => {
+    const nuevoHistorial = req.body;
+    const { age, gender, mainEmotion, allEmotions, identity, skinTone } = nuevoHistorial;
+    const allEmotionsJson = JSON.stringify(allEmotions);
 
-// --- RUTAS (ENDPOINTS) DE NUESTRA API ---
+    try {
+        // Usamos el pool de conexiones global. No necesitamos llamar a connect() aquí.
+        // La conexión ya está establecida.
+        await sql.connect(sqlConfig); // Conectamos antes de la consulta
+        await sql.request()
+            .input('age', sql.Int, age)
+            .input('gender', sql.NVarChar, gender)
+            .input('mainEmotion', sql.NVarChar, mainEmotion)
+            .input('identityValue', sql.NVarChar, identity)
+            .input('skinTone', sql.NVarChar, skinTone)
+            .input('allEmotions', sql.NVarChar, allEmotionsJson)
+            .query(`
+                INSERT INTO Historiales (age, gender, main_emotion, identidad, skin_tone, all_emotions)
+                VALUES (@age, @gender, @mainEmotion, @identityValue, @skinTone, @allEmotions);
+            `);
 
-// Ruta de bienvenida para probar si el servidor funciona
-app.get('/', (req, res) => {
-  res.send('¡El backend de reconocimiento facial está funcionando! 🚀');
+        console.log('✅ [SQL SUCCESS] Historial guardado con éxito en Azure SQL Server.');
+
+        return res.status(201).json({
+            message: 'Historial guardado con éxito en Azure SQL Server',
+            storage: 'SQL_SERVER'
+        });
+
+    } catch (error) {
+        console.error('⚠️ [SQL FAIL] Error al conectar o insertar en SQL Server. Usando memoria...', error.message);
+        
+        // FALLBACK: Guardar únicamente en el array en memoria
+        console.log('🔄 [FALLBACK] Guardando historial en el array en memoria.');
+        nuevoHistorial.id = Date.now();
+        nuevoHistorial.fecha = new Date().toISOString();
+        historiales.push(nuevoHistorial);
+
+        res.status(500).json({ // Es mejor usar un status 500 para indicar un fallo del servidor
+            message: 'Error al guardar en la base de datos. Historial guardado solo en memoria (Fallback)',
+            storage: 'MEMORY',
+            error: error.message,
+            historial: nuevoHistorial
+        });
+    }
 });
 
-// Ruta para obtener todos los historiales guardados
-app.get('/api/historiales', (req, res) => {
-  res.json(historiales);
-});
+// --- RUTA PARA OBTENER DATOS DESDE SQL SERVER ---
+app.get('/api/historiales', async (req, res) => {
+    try {
+        await sql.connect(sqlConfig);
+        const result = await sql.query`SELECT * FROM Historiales ORDER BY fecha DESC`;
+        
+        console.log('✅ [SQL SUCCESS] Historiales obtenidos desde Azure SQL Server.');
+        res.json(result.recordset);
 
-// Ruta para recibir y guardar un nuevo historial de análisis
-app.post('/api/historiales', (req, res) => {
-  const nuevoHistorial = req.body;
-
-  // Añadimos un ID único y una fecha para cada historial
-  nuevoHistorial.id = Date.now();
-  nuevoHistorial.fecha = new Date().toISOString();
-
-  // Guardamos el nuevo historial en nuestra "base de datos"
-  historiales.push(nuevoHistorial);
-
-  console.log('Nuevo historial recibido y guardado:');
-  console.log(nuevoHistorial);
-
-  // Enviamos una respuesta de éxito (código 201: Creado)
-  res.status(201).json({ message: 'Historial guardado con éxito', historial: nuevoHistorial });
+    } catch (error) {
+        console.error('⚠️ [SQL FAIL] No se pudieron obtener los historiales de SQL. Devolviendo desde memoria...', error.message);
+        // Fallback a memoria si la BD falla
+        res.json(historiales);
+    }
 });
 
 
 // --- INICIAR EL SERVIDOR ---
-app.listen(PORT, () => {
-  console.log(`Servidor escuchando en http://localhost:${PORT}`);
+// Conectamos a la BD y SÓLO si tenemos éxito, iniciamos el servidor Express.
+sql.connect(sqlConfig).then(() => {
+    app.listen(PORT, () => {
+        console.log(`✅ Conexión con SQL Server establecida en el arranque.`);
+        console.log(`🚀 Servidor escuchando en puerto ${PORT}.`);
+    });
+}).catch(err => {
+    console.error('🚨 [FATAL] No se pudo conectar a la base de datos al iniciar el servidor.', err);
 });
