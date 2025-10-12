@@ -1,18 +1,18 @@
 {
-  "name": "facial-recognition-backend",
+  "name": "backend",
   "version": "1.0.0",
-  "description": "Backend para Analisis Facial",
-  "main": "server.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js" 
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "description": "",
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.19.2",  
-    "mssql": "^10.0.2",   
-    "tedious": "^18.2.0" 
+    "express": "^5.1.0",
+    "mssql": "^12.0.0",
+    "tedious": "^19.0.0"
   }
 }
