@@ -1,4 +1,3 @@
-// INICIO DEL ARCHIVO COMPLETO Y FINAL: src/components/Camera/index.jsx
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import * as faceapi from "face-api.js";
@@ -38,7 +37,7 @@ const getAverageRgb = async (imageSrc) => {
 
 // ----------------------------------------------------------------------
 //AJUSTAAQUIII: Definición de la URL del Backend de Render
-const RENDER_API_BASE_URL = 'https://facial-recognition-foal.onrender.com/'; 
+const RENDER_API_BASE_URL = 'https://facial-recognition-foal-0s8z.onrender.com/'; 
 // ----------------------------------------------------------------------
 
 export default function CameraComponent() {
@@ -215,13 +214,22 @@ export default function CameraComponent() {
       finalGender = detectedGenderByAI === 'male' ? 'Masculino' : 'Femenino';
     }
 
+    // ----------------------------------------------------------------------
+    // AJUSTE SOLICITADO: Sobrescribir Tono de Piel si la identidad es 'Flor'
+    let finalSkinTone = detectedSkinTone;
+    if (detectedIdentity === 'Flor') {
+        finalSkinTone = 'Tes Blanca'; 
+        console.log(`✅ Sobrescribiendo Tono de Piel: Se detectó a ${detectedIdentity}, forzando a ${finalSkinTone}.`);
+    }
+    // ----------------------------------------------------------------------
+
     const reportData = {
       age: Math.round(averageAge),
       gender: finalGender,
       mainEmotion: mainEmotion,
       allEmotions: translatedAveragedEmotions,
       identity: detectedIdentity,
-      skinTone: detectedSkinTone,
+      skinTone: finalSkinTone, // Usar el valor posiblemente sobrescrito
     };
 
     console.log("📊 Reporte final generado:", reportData);
@@ -384,5 +392,3 @@ export default function CameraComponent() {
     </div>
   );
 }
-
-// FIN DEL ARCHIVO COMPLETO
