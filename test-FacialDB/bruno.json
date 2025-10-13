@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "test-FacialDB",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}
