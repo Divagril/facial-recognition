@@ -38,7 +38,7 @@ const getAverageRgb = async (imageSrc) => {
 
 // ----------------------------------------------------------------------
 //AJUSTAAQUIII: Definición de la URL del Backend de Render
-const RENDER_API_BASE_URL = 'https://facial-recognition-app-frontend.onrender.com/'; 
+const BACKEND_API_BASE_URL = 'backend-production-7bc5.up.railway.app'; 
 // ----------------------------------------------------------------------
 
 export default function CameraComponent() {
@@ -228,7 +228,7 @@ export default function CameraComponent() {
 
     // ----------------------------------------------------------------------
     // 🚨 AJUSTE CRÍTICO: Uso de la URL de Render para enviar la petición al backend
-    const API_ENDPOINT = `${RENDER_API_BASE_URL}/api/historiales`;
+    const API_ENDPOINT = `${BACKEND_API_BASE_URL}/api/historiales`;
 
     try {
       const response = await fetch(API_ENDPOINT, { //Llama a la URL de Render
